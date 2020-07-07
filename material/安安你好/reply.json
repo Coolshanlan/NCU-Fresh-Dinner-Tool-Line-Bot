@@ -1,0 +1,25 @@
+[{
+        "type": "text",
+        "text": "你太酷了"
+    },
+    {
+        "type": "template",
+        "altText": "this is a buttons template",
+        "template": {
+            "type": "buttons",
+            "actions": [{
+                    "type": "message",
+                    "label": "我要看女生",
+                    "text": "我要看女生"
+                },
+                {
+                    "type": "message",
+                    "label": "請你看仔細",
+                    "text": "請你看仔細"
+                }
+            ],
+            "title": "功能展示",
+            "text": "有以下功能 or 傳一張圖上來"
+        }
+    }
+]

@@ -1,0 +1,20 @@
+[{
+    "type": "template",
+    "altText": "this is a buttons template",
+    "template": {
+        "type": "buttons",
+        "actions": [{
+                "type": "message",
+                "label": "讓我看女生",
+                "text": "讓我看女生"
+            },
+            {
+                "type": "message",
+                "label": "給你看女生",
+                "text": "給你看女生"
+            }
+        ],
+        "title": "我好興奮阿",
+        "text": "你想做什麼?"
+    }
+}]
