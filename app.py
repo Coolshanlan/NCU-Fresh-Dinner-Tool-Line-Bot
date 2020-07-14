@@ -13,6 +13,7 @@ import PIL.ImageFont as ImageFont
 from urllib.parse import parse_qs
 import csv
 import openpyxl as op
+import random
 # import imgurfile
 from imgurpython import ImgurClient
 from linebot.models.template import *
@@ -222,20 +223,49 @@ def updatemax():
     userlist = [[b.value for b in i] for i in list(usersheet.rows)]
 
 
+def remindnotorder():
+    notorderid = getNotOrder()
+    push = input("Remind? yes ot n\n")
+    if push.lower() == "yes":
+        line_bot_api.multicast(notorderid, TextSendMessage(text='你今天還沒點餐歐！'))
+        print(f"已送出提醒！共{len(notorderid)}人")
+
+
+def getNotOrder():
+    user_Name = [i[1] for i in userlist]
+    dinnerlisttmp = []
+    for i in range(1, len(dinnerlist)):
+        if dinnerlist[i][0].date() == date.today():
+            dinnerlisttmp.append(dinnerlist[i][3])
+    usernotorder = []
+    usernotordername = []
+    for i in range(1, len(user_Name)):
+        if user_Name[i] not in dinnerlisttmp:
+            usernotorder.append(userlist[i][0])
+            usernotordername.append(userlist[i][1])
+    print(usernotordername)
+    print(f"共{len(usernotordername)}人")
+    return usernotorder
+
+
 @handler.add(MessageEvent, message=TextMessage)
 def process_text_message(event):
-    global filepath, today_date, storeName, FoodMessaage
+    global filepath, today_date, storeName
+    if event.message.text == "Hello, world":
+        print("Success!")
+        return
     if event.message.text == "格式":
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="餐點/價格/價差")
-        )
+
         return
     if event.message.text == "今天吃什麼":
-
+        # line_bot_api.reply_message(
+        #     event.reply_token,
+        #     TextSendMessage(text="抱歉手太粗按到，還沒開始呦")
+        # )
+        # return
         line_bot_api.reply_message(
             event.reply_token,
-            FoodMessaage
+            getFoodMessage()
         )
         return
     user_id = event.source.user_id.replace("\n", "")
@@ -254,27 +284,51 @@ def process_text_message(event):
             event.reply_token,
             TextSendMessage(text=f"{user_id} {event.message.text} 已登錄")
         )
-        print(f"登陸：{event.message.text}/{user_id}")
+        print(f"登錄：{event.message.text}/{user_id}")
     else:
         user_info = user_info[0]
-        testinfo = event.message.text.split("/")
+        testinfo = event.message.text.replace("／", "/").split("/")
         if len(testinfo) != 3:
-            usersheet[f"D{user_index+1}"] = event.message.text
+            if usersheet[f"D{user_index+1}"].value != None:
+                usersheet[f"D{user_index+1}"] = usersheet[f"D{user_index+1}"].value + \
+                    event.message.text+"\n"
+            else:
+                usersheet[f"D{user_index+1}"] = event.message.text+"\n"
             wb.save(filepath)
             updatemax()
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="我看不懂耶QQ")
-            )
+            print(user_info[1] + ":"+event.message.text)
+            if "麥當勞" in event.message.text:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="再麥當勞給我試試看")
+                )
+            elif "歐姐" in event.message.text or "歐姊" in event.message.text:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="沒被打過?")
+                )
+            else:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="願望小精靈收到囉~\n但不一定會實現呦<3")
+                )
             return
+        check = "F"
+        for i in range(1, len(dinnerlist)):
+            if (type(dinnerlist[i][0]) != type(date.today())):
+                dinnerlist[i][0] = dinnerlist[i][0].date()
+            if (dinnerlist[i][0] == date.today() and user_info[1] == dinnerlist[i][3] and storeName == dinnerlist[i][2]):
+                check = "T"
         nowtime = datetime.now().strftime("%H:%M")
         dinnersheet[f"A{dinnermax+1}"] = today_date
         dinnersheet[f"B{dinnermax+1}"] = nowtime
         dinnersheet[f"C{dinnermax+1}"] = storeName
         dinnersheet[f"D{dinnermax+1}"] = user_info[1]
         dinnersheet[f"E{dinnermax+1}"] = testinfo[0]
-        dinnersheet[f"F{dinnermax+1}"] = testinfo[1]
-        dinnersheet[f"G{dinnermax+1}"] = testinfo[2]
+        dinnersheet[f"F{dinnermax+1}"] = int(testinfo[1])
+        dinnersheet[f"G{dinnermax+1}"] = int(testinfo[2])
+        dinnersheet[f"H{dinnermax+1}"] = check
+        dinnersheet[f"I{dinnermax+1}"] = int(testinfo[1]) - int(testinfo[2])
         wb.save(filepath)
         updatemax()
         line_bot_api.reply_message(
@@ -285,13 +339,53 @@ def process_text_message(event):
             f"點餐：{today_date}/{nowtime}/{storeName}/{user_info[1]}/{testinfo[0]}/{testinfo[1]}/{testinfo[2]}")
 
 
+def randomsuer(number):
+    whilenumber = number
+    useridlist = []
+    usernamelist = []
+    while(whilenumber > 0):
+        userindex = random.randint(1, len(userlist)-1)
+        if userlist[userindex][0] not in useridlist:
+            useridlist.append(userlist[userindex][0])
+            usernamelist.append(
+                userlist[userindex][1])
+            whilenumber -= 1
+    return useridlist, usernamelist
+
+
+def whatInMyBag(useridlist):
+    line_bot_api.multicast(
+        useridlist,
+        [TextSendMessage(text="恭喜您成為新生知訊網 特殊支線任務 What in my bag 的幸運兒\n請立刻找企劃組組長「李詰琳」確認詳細內容"), ImageSendMessage(original_content_url="https://i.imgur.com/TlkemHu.png",
+                                                                                                               preview_image_url="https://i.imgur.com/TlkemHu.png"),
+            TextSendMessage(text="請一定要看dcard格式參考:\n1.	https://www.dcard.tw/f/girl/p/233869195\n2.	https://www.dcard.tw/f/girl/p/233189864\n3.	https://www.dcard.tw/search?query=what%27s%20in%20my%20bag\n截止日期:7/20(一)\n請上傳至這雲端: https://drive.google.com/drive/folders/1Oiae4vlYV2VQwgjyPdrm6PzRpxh9hHwe?usp=sharing")]
+    )
+    print("Sccess!")
+
+
+def getFoodMessage():
+    global storeName
+    imagepath = "https://scontent.ftpe8-4.fna.fbcdn.net/v/t1.0-9/s960x960/104822596_2625400611031518_8270819975460279710_o.jpg?_nc_cat=102&_nc_sid=110474&_nc_ohc=qmd3_gnipXsAX92n_IK&_nc_ht=scontent.ftpe8-4.fna&_nc_tp=7&oh=a3d50fed48880cfa12a4ca2d718d68f1&oe=5F30BCB9"
+    subsidy = 85
+    storeName = "三郎便當"
+    notenough = ""
+    formatstring = "餐點/價格/價差"
+    FoodMessaage = []
+    FoodMessaage.append(ImageSendMessage(
+        original_content_url=imagepath, preview_image_url=imagepath))
+    FoodMessaage.append(TextSendMessage(
+        text=f"店家：{storeName}\n補助：{subsidy}\n缺貨：{notenough}\n{formatstring}"))
+    return FoodMessaage
+
+
 # %%
 '''
 
 Application 運行（開發版）
 
 '''
-filepath = "C:\\User_D\\Program\\Project_Python\\ncufresh_dinnertool\\DinnerList.xlsx"
+storeName = ""
+filepath = "DinnerList.xlsx"
 wb = op.load_workbook(filepath)
 usersheet = wb["UserList"]
 dinnersheet = wb["DinnerList"]
@@ -299,16 +393,10 @@ usermax = usersheet.max_row
 dinnermax = dinnersheet.max_row
 dinnerlist = [i[0].value for i in list(dinnersheet.rows)]
 userlist = [i[0].value for i in list(usersheet.rows)]
-storeName = "Test"
 # print(userlist)
 today_date = date.today()
-FoodMessaage = []
-subsidy = 100
-imagepath = "https://image.shutterstock.com/image-photo/healthy-food-clean-eating-selection-260nw-722718097.jpg"
 # ImageSendMessage(original_content_url='圖片網址', preview_image_url='圖片網址')
-FoodMessaage.append(ImageSendMessage(
-    original_content_url=imagepath, preview_image_url=imagepath))
-FoodMessaage.append(TextSendMessage(text=f"補助：{subsidy}"))
+
 updatemax()
 if __name__ == "__main__":
     # imgur_client = imgurfile.setauthorize()
@@ -318,6 +406,12 @@ if __name__ == "__main__":
     #     loss = round(loss, 4)
     #     print(f"loss:{loss}  acc:{acc}")
     # process_image_message(None)
+    getFoodMessage()
+    remindnotorder()
+    # while(input("random again?") == "y"):
+    #     userids, usernames = randomsuer(8)
+    #     print(usernames)
+    # whatInMyBag(userids)
     app.run(host='0.0.0.0')
 
 
