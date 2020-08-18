@@ -5,6 +5,7 @@ import os
 import re
 import requests
 import torch
+import imgurfile
 from datetime import date, datetime
 import numpy as np
 import PIL.Image as Image
@@ -14,6 +15,8 @@ from urllib.parse import parse_qs
 import csv
 import openpyxl as op
 import random
+import threading
+import time
 # import imgurfile
 from imgurpython import ImgurClient
 from linebot.models.template import *
@@ -199,8 +202,18 @@ handler處理文字消息
 # 引用套件
 
 
+def uploadImage(filename, path):
+    config = {
+        'name': filename.split('.')[0],
+        'title': path.split('.')[0],
+        'description': 'test-description'
+    }
+    return imgurfile.upload(imgur_client, path, config)["link"]
+
+
 @handler.add(MessageEvent, message=ImageMessage)
 def process_image_message(event):
+    global userlist
     result_message_array = []
     response = requests.get(
         f"https://api.line.me/v2/bot/message/{event.message.id}/content", stream=True, headers={'Authorization': f'Bearer {secretFileContentJson.get("channel_access_token")}'})
@@ -208,7 +221,15 @@ def process_image_message(event):
     img = Image.open(response.raw)
     filepath = f"predection/{event.message.id}.{img.format.lower()}"
     img.save(filepath)
-    result_message_array.append(TextSendMessage(text="好歐收到囉~"))
+    usid = event.source.user_id.replace("\n", "")
+    username = [i for i in userlist if i[0].replace(
+                "\n", "") == usid]
+    username = username[0][1]
+    imageweburl = "非管理員無法上傳"
+    if username == "陳皇宇" or username == "張文耀":
+        imageweburl = (uploadImage(filepath.split("/")[-1], filepath))
+    result_message_array.append(TextSendMessage(
+        text=f"好歐收到囉~\n\nURL:{imageweburl}"))
     line_bot_api.reply_message(
         event.reply_token,
         result_message_array
@@ -223,15 +244,32 @@ def updatemax():
     userlist = [[b.value for b in i] for i in list(usersheet.rows)]
 
 
-def remindnotorder():
-    notorderid = getNotOrder()
+def reminduser(remindid, message):
     push = input("Remind? yes ot n\n")
     if push.lower() == "yes":
-        line_bot_api.multicast(notorderid, TextSendMessage(text='你今天還沒點餐歐！'))
-        print(f"已送出提醒！共{len(notorderid)}人")
+        line_bot_api.multicast(remindid, TextSendMessage(text=message))
+        # line_bot_api.multicast(notorderid, TextSendMessage(
+        #     text='緊急事件，抱歉今天有點晚，請在1530前點完餐，互相提醒發揮愛<3'))
+        print(f"已送出提醒！共{len(remindid)}人")
 
 
-def getNotOrder():
+def getAlluser():
+    user_Name = [i[1] for i in userlist]
+    dinnerlisttmp = []
+    for i in range(1, len(dinnerlist)):
+        dinnerlisttmp.append(dinnerlist[i][3])
+    usernotorder = []
+    usernotordername = []
+    for i in range(1, len(user_Name)):
+        usernotorder.append(userlist[i][0])
+        usernotordername.append(userlist[i][1])
+    print(usernotordername)
+    print(f"共{len(usernotordername)}人")
+    return usernotorder
+
+
+def getNotOrder(printname=True):
+    global notordernum
     user_Name = [i[1] for i in userlist]
     dinnerlisttmp = []
     for i in range(1, len(dinnerlist)):
@@ -243,100 +281,21 @@ def getNotOrder():
         if user_Name[i] not in dinnerlisttmp:
             usernotorder.append(userlist[i][0])
             usernotordername.append(userlist[i][1])
-    print(usernotordername)
-    print(f"共{len(usernotordername)}人")
+    if printname:
+        print(usernotordername)
+    notordernum = len(usernotordername)
+    print(f"共{len(usernotordername)}人尚未點餐")
     return usernotorder
 
 
 @handler.add(MessageEvent, message=TextMessage)
 def process_text_message(event):
     global filepath, today_date, storeName
-    if event.message.text == "Hello, world":
-        print("Success!")
-        return
-    if event.message.text == "格式":
-
-        return
-    if event.message.text == "今天吃什麼":
-        # line_bot_api.reply_message(
-        #     event.reply_token,
-        #     TextSendMessage(text="抱歉手太粗按到，還沒開始呦")
-        # )
-        # return
-        line_bot_api.reply_message(
-            event.reply_token,
-            getFoodMessage()
-        )
-        return
-    user_id = event.source.user_id.replace("\n", "")
-    user_info = [i for i in userlist if i[0].replace("\n", "") == user_id]
-    user_index = -1
-    for index, i in enumerate(userlist):
-        if i[0].replace("\n", "") == user_id:
-            user_index = index
-            break
-    if user_info == []:
-        usersheet[f"A{usermax+1}"] = user_id
-        usersheet[f"B{usermax+1}"] = event.message.text
-        wb.save(filepath)
-        updatemax()
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=f"{user_id} {event.message.text} 已登錄")
-        )
-        print(f"登錄：{event.message.text}/{user_id}")
-    else:
-        user_info = user_info[0]
-        testinfo = event.message.text.replace("／", "/").split("/")
-        if len(testinfo) != 3:
-            if usersheet[f"D{user_index+1}"].value != None:
-                usersheet[f"D{user_index+1}"] = usersheet[f"D{user_index+1}"].value + \
-                    event.message.text+"\n"
-            else:
-                usersheet[f"D{user_index+1}"] = event.message.text+"\n"
-            wb.save(filepath)
-            updatemax()
-            print(user_info[1] + ":"+event.message.text)
-            if "麥當勞" in event.message.text:
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="再麥當勞給我試試看")
-                )
-            elif "歐姐" in event.message.text or "歐姊" in event.message.text:
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="沒被打過?")
-                )
-            else:
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="願望小精靈收到囉~\n但不一定會實現呦<3")
-                )
-            return
-        check = "F"
-        for i in range(1, len(dinnerlist)):
-            if (type(dinnerlist[i][0]) != type(date.today())):
-                dinnerlist[i][0] = dinnerlist[i][0].date()
-            if (dinnerlist[i][0] == date.today() and user_info[1] == dinnerlist[i][3] and storeName == dinnerlist[i][2]):
-                check = "T"
-        nowtime = datetime.now().strftime("%H:%M")
-        dinnersheet[f"A{dinnermax+1}"] = today_date
-        dinnersheet[f"B{dinnermax+1}"] = nowtime
-        dinnersheet[f"C{dinnermax+1}"] = storeName
-        dinnersheet[f"D{dinnermax+1}"] = user_info[1]
-        dinnersheet[f"E{dinnermax+1}"] = testinfo[0]
-        dinnersheet[f"F{dinnermax+1}"] = int(testinfo[1])
-        dinnersheet[f"G{dinnermax+1}"] = int(testinfo[2])
-        dinnersheet[f"H{dinnermax+1}"] = check
-        dinnersheet[f"I{dinnermax+1}"] = int(testinfo[1]) - int(testinfo[2])
-        wb.save(filepath)
-        updatemax()
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=f"{user_info[1]} 飢餓精靈收到囉！")
-        )
-        print(
-            f"點餐：{today_date}/{nowtime}/{storeName}/{user_info[1]}/{testinfo[0]}/{testinfo[1]}/{testinfo[2]}")
+    userinfo = {}
+    userinfo["message"] = event.message.text
+    userinfo["ID"] = event.source.user_id.replace("\n", "")
+    userinfo["token"] = event.reply_token
+    userRequireList.append(userinfo)
 
 
 def randomsuer(number):
@@ -353,28 +312,128 @@ def randomsuer(number):
     return useridlist, usernamelist
 
 
-def whatInMyBag(useridlist):
+def Sendtouser(useridlist):
     line_bot_api.multicast(
         useridlist,
-        [TextSendMessage(text="恭喜您成為新生知訊網 特殊支線任務 What in my bag 的幸運兒\n請立刻找企劃組組長「李詰琳」確認詳細內容"), ImageSendMessage(original_content_url="https://i.imgur.com/TlkemHu.png",
-                                                                                                               preview_image_url="https://i.imgur.com/TlkemHu.png"),
-            TextSendMessage(text="請一定要看dcard格式參考:\n1.	https://www.dcard.tw/f/girl/p/233869195\n2.	https://www.dcard.tw/f/girl/p/233189864\n3.	https://www.dcard.tw/search?query=what%27s%20in%20my%20bag\n截止日期:7/20(一)\n請上傳至這雲端: https://drive.google.com/drive/folders/1Oiae4vlYV2VQwgjyPdrm6PzRpxh9hHwe?usp=sharing")]
+        [TextSendMessage(text="恭喜你成為 主線任務 倒垃圾值日生 的幸運兒\n請立刻找執行長確認任務內容")]
     )
-    print("Sccess!")
+    print("Finish")
+
+
+def writeExcel():
+    global userRequireList, app, notordernum
+    while(1):
+        while(userRequireList != []):
+            userinfo = userRequireList.pop(0)
+            usermessage = userinfo["message"]
+            user_id = userinfo["ID"]
+            if usermessage == "Hello, world":
+                print("Success!")
+                continue
+            if usermessage == "格式":
+                continue
+            if "吃什麼" in usermessage or "今天吃" in usermessage or "現在吃" in usermessage or "晚餐吃" in usermessage or "菜單" in usermessage or usermessage == "晚餐":
+                line_bot_api.reply_message(
+                    userinfo["token"],
+                    getFoodMessage()
+                )
+                continue
+            user_info = [i for i in userlist if i[0].replace(
+                "\n", "") == user_id]
+            user_index = -1
+            if user_info[0][1] == "陳皇宇" and usermessage == "shutdown":
+                return
+            for index, i in enumerate(userlist):
+                if i[0].replace("\n", "") == user_id:
+                    user_index = index
+                    break
+            if user_info == []:
+                usersheet[f"A{usermax+1}"] = user_id
+                usersheet[f"B{usermax+1}"] = usermessage
+                wb.save(filepath)
+                updatemax()
+                line_bot_api.reply_message(
+                    userinfo["token"],
+                    TextSendMessage(text=f"{user_id} {usermessage} 已登錄")
+                )
+                print(f"已登錄：{usermessage}/{user_id}")
+            else:
+                user_info = user_info[0]
+                testinfo = usermessage.replace("／", "/").split("/")
+                if len(testinfo) != 3:
+                    if usersheet[f"D{user_index+1}"].value != None:
+                        usersheet[f"D{user_index+1}"] = usersheet[f"D{user_index+1}"].value + \
+                            usermessage+"\n"
+                    else:
+                        usersheet[f"D{user_index+1}"] = usermessage+"\n"
+                    wb.save(filepath)
+                    updatemax()
+                    print(user_info[1] + ":"+usermessage)
+                    if "麥當勞" in usermessage:
+                        line_bot_api.reply_message(
+                            userinfo["token"],
+                            TextSendMessage(text="再麥當勞給我試試看")
+                        )
+                    elif "歐姐" in usermessage or "歐姊" in usermessage:
+                        line_bot_api.reply_message(
+                            userinfo["token"],
+                            TextSendMessage(text="沒被打過?")
+                        )
+                    else:
+                        line_bot_api.reply_message(
+                            userinfo["token"],
+                            TextSendMessage(text="願望小精靈收到囉~\n但不一定會實現呦<3")
+                        )
+                    continue
+                check = "F"
+                for i in range(1, len(dinnerlist)):
+                    if (type(dinnerlist[i][0]) != type(date.today())):
+                        dinnerlist[i][0] = dinnerlist[i][0].date()
+                    if (dinnerlist[i][0] == date.today() and user_info[1] == dinnerlist[i][3] and storeName == dinnerlist[i][2]):
+                        check = "T"
+                nowtime = datetime.now().strftime("%H:%M")
+                dinnersheet[f"A{dinnermax+1}"] = today_date
+                dinnersheet[f"B{dinnermax+1}"] = nowtime
+                dinnersheet[f"C{dinnermax+1}"] = storeName
+                dinnersheet[f"D{dinnermax+1}"] = user_info[1]
+                dinnersheet[f"E{dinnermax+1}"] = testinfo[0]
+                dinnersheet[f"F{dinnermax+1}"] = int(testinfo[1])
+                dinnersheet[f"G{dinnermax+1}"] = int(testinfo[2])
+                dinnersheet[f"H{dinnermax+1}"] = check
+                dinnersheet[f"I{dinnermax+1}"] = int(
+                    testinfo[1]) - int(testinfo[2])
+                wb.save(filepath)
+                notordernum -= 1
+                updatemax()
+                line_bot_api.reply_message(
+                    userinfo["token"],
+                    TextSendMessage(text=f"{user_info[1]} 飢餓精靈收到囉！")
+                )
+                print(
+                    f"點餐：{today_date}/{nowtime}/{storeName}/{user_info[1]}/{testinfo[0]}/{testinfo[1]}/{testinfo[2]}")
+                print(f"尚未點餐人數：{notordernum}")
+        time.sleep(0.3)
 
 
 def getFoodMessage():
     global storeName
-    imagepath = "https://scontent.ftpe8-4.fna.fbcdn.net/v/t1.0-9/s960x960/104822596_2625400611031518_8270819975460279710_o.jpg?_nc_cat=102&_nc_sid=110474&_nc_ohc=qmd3_gnipXsAX92n_IK&_nc_ht=scontent.ftpe8-4.fna&_nc_tp=7&oh=a3d50fed48880cfa12a4ca2d718d68f1&oe=5F30BCB9"
-    subsidy = 85
-    storeName = "三郎便當"
+    imagepath1 = ""
+    imagepath2 = ""
+    subsidy = 100
+    storeName = "胖老爹"
+    headerstring = "【真的最後一次推飯】\n\n菜單： https://www.foodbooking.com/api/fb/eplv6"
     notenough = ""
-    formatstring = "餐點/價格/價差"
+    formatstring = "餐點/價格/價差(>=0)\n不吃不點：今天不吃/0/0"
+    footstring = "都沒玩到桌游真的很可惜\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n天下沒有不散的宴席\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
     FoodMessaage = []
-    FoodMessaage.append(ImageSendMessage(
-        original_content_url=imagepath, preview_image_url=imagepath))
+    if imagepath1 != "":
+        FoodMessaage.append(ImageSendMessage(
+            original_content_url=imagepath1, preview_image_url=imagepath1))
+    if imagepath2 != "":
+        FoodMessaage.append(ImageSendMessage(
+            original_content_url=imagepath2, preview_image_url=imagepath2))
     FoodMessaage.append(TextSendMessage(
-        text=f"店家：{storeName}\n補助：{subsidy}\n缺貨：{notenough}\n{formatstring}"))
+        text=f"{headerstring}\n\n店家：{storeName}\n補助：{subsidy}\n缺貨：{notenough}\n{formatstring}\n\n{footstring}"))
     return FoodMessaage
 
 
@@ -395,6 +454,8 @@ dinnerlist = [i[0].value for i in list(dinnersheet.rows)]
 userlist = [i[0].value for i in list(usersheet.rows)]
 # print(userlist)
 today_date = date.today()
+userRequireList = []
+notordernum = 33
 # ImageSendMessage(original_content_url='圖片網址', preview_image_url='圖片網址')
 
 updatemax()
@@ -406,12 +467,16 @@ if __name__ == "__main__":
     #     loss = round(loss, 4)
     #     print(f"loss:{loss}  acc:{acc}")
     # process_image_message(None)
+    imgur_client = imgurfile.setauthorize()
     getFoodMessage()
-    remindnotorder()
-    # while(input("random again?") == "y"):
-    #     userids, usernames = randomsuer(8)
+    reminduser(getNotOrder(), "真●最後一次推飯")
+    # reminduser(getAlluser(), "給大家喝個飲料，補個元氣！大家加油！\n\n請打\"菜單\"看詳細資訊")
+    # while(input("random again?") == "yes"):
+    #     userids, usernames = randomsuer(2)
     #     print(usernames)
-    # whatInMyBag(userids)
+    # if userids != []:
+    #     Sendtouser(userids)
+    threading.Thread(target=writeExcel).start()
     app.run(host='0.0.0.0')
 
 
